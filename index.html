@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Audit Aset PC</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root { --bg:#f4f6f8; --card:#fff; --text:#1c2430; --muted:#6b7683; --line:#dde3ea;
+          --brand:#2457d6; --ok:#1a9d4a; --warn:#d98a00; --bad:#d23b3b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  header { background:var(--brand); color:#fff; padding:12px 16px; position:sticky; top:0; z-index:5; }
+  .top { display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:18px; margin:0; }
+  header button { background:transparent; border:1px solid #fff8; color:#fff; border-radius:8px; padding:6px 10px; font-size:14px; }
+  #prog { font-size:13px; opacity:.9; margin-top:4px; }
+  .bar { height:5px; background:#ffffff40; border-radius:9px; margin-top:6px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:#7dffa8; width:0; transition:width .3s; }
+  main { max-width:560px; margin:0 auto; padding:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:14px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input, textarea { width:100%; padding:12px; font-size:16px; border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--text); }
+  textarea { min-height:80px; resize:vertical; }
+  button.big { width:100%; padding:15px; font-size:17px; font-weight:600; border:0; border-radius:12px; color:#fff; background:var(--brand); margin-top:10px; }
+  button.big.ok { background:var(--ok); }
+  button.big.alt { background:#fff; color:var(--brand); border:2px solid var(--brand); }
+  button.big.ghost { background:#e9edf2; color:var(--text); }
+  button:disabled { opacity:.5; }
+  #reader { width:100%; border-radius:12px; overflow:hidden; background:#000; }
+  .row { display:flex; gap:8px; } .row > * { flex:1; }
+  .kv { display:grid; grid-template-columns:105px 1fr; gap:6px 10px; font-size:15px; }
+  .kv b { color:var(--muted); font-weight:500; }
+  .tag { font-size:19px; font-weight:700; word-break:break-all; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:99px; font-size:13px; font-weight:600; color:#fff; background:var(--muted); }
+  .pill.Disahkan { background:var(--ok); } .pill.Dikemaskini { background:var(--warn); }
+  .pick { padding:12px; border:1px solid var(--line); border-radius:10px; margin-top:8px; background:#fafbfc; }
+  .pick b { display:block; word-break:break-all; } .pick small { color:var(--muted); }
+  #toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#1c2430; color:#fff; padding:12px 18px;
+           border-radius:12px; opacity:0; pointer-events:none; transition:opacity .2s; max-width:90%; text-align:center; z-index:20; }
+  #toast.show { opacity:1; } #toast.err { background:var(--bad); } #toast.good { background:var(--ok); }
+  .hidden { display:none !important; }
+  .check { font-size:64px; text-align:center; color:var(--ok); }
+  .noid { background:#fff6e0; border:1px solid #f0d58a; border-radius:10px; padding:8px 10px; font-size:14px; margin-top:10px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><h1>📦 Audit Aset PC</h1><button id="btnSettings">Tetapan</button></div>
+  <div id="prog"></div><div class="bar"><i id="barFill"></i></div>
+</header>
+
+<main>
+  <section id="settings" class="card hidden">
+    <h3 style="margin-top:0">Tetapan</h3>
+    <label>URL Web App (Apps Script)</label>
+    <input id="cfgUrl" placeholder="https://script.google.com/macros/s/.../exec" inputmode="url">
+    <label>Kod laluan</label>
+    <input id="cfgPass" type="password" placeholder="PASSCODE dalam Script properties">
+    <label>Nama anda (juruaudit)</label>
+    <input id="cfgName" placeholder="cth. Ahmad">
+    <button class="big" id="btnSave">Simpan</button>
+  </section>
+
+  <section id="scanCard" class="card">
+    <div id="reader" class="hidden"></div>
+    <button class="big" id="btnScan">📷 Imbas barkod / QR</button>
+    <button class="big ghost hidden" id="btnStop">Hentikan kamera</button>
+    <button class="big alt hidden" id="btnTorch">🔦 Lampu suluh</button>
+    <button class="big alt" id="btnPhoto">🖼 Ambil gambar barkod (jika imbasan terus gagal)</button>
+    <input type="file" id="photoIn" accept="image/*" capture="environment" class="hidden">
+    <div id="reader-tmp" style="display:none"></div>
+    <label>Atau taip No. Aset / Tag ID / nama pengguna</label>
+    <div class="row">
+      <input id="manual" placeholder="KKM/JKN/14-01/H/20/58" autocomplete="off">
+      <button class="big alt" id="btnLookup" style="margin-top:0;flex:0 0 80px">Cari</button>
+    </div>
+  </section>
+
+  <section id="pickCard" class="card hidden">
+    <b>Pilih peranti:</b>
+    <div id="pickList"></div>
+    <button class="big ghost" id="btnPickBack">Kembali</button>
+  </section>
+
+  <section id="result" class="card hidden">
+    <div class="tag" id="rId"></div>
+    <div style="margin:6px 0 12px"><span id="rAudit" class="pill"></span></div>
+    <div class="kv">
+      <b>Pengguna</b><span id="rUser" style="font-weight:600"></span>
+      <b>Jenis</b><span id="rType"></span>
+      <b>Status</b><span id="rStatus"></span>
+      <b>Jabatan</b><span id="rPlace"></span>
+      <b>Lokasi</b><span id="rLoc"></span>
+      <b>Usia</b><span id="rAge"></span>
+      <b>Syarikat</b><span id="rCompany"></span>
+      <b>Kegunaan</b><span id="rUse"></span>
+      <b>Disemak</b><span id="rLast"></span>
+      <b>Catatan</b><span id="rNote"></span>
+    </div>
+    <div id="noId" class="noid hidden">⚠ Peranti ini tiada No. Aset / Tag ID dalam senarai. Sila catat di Catatan dan kemas kini senarai.</div>
+    <button class="big ok" id="btnVerify">✔ Betul — Sahkan</button>
+    <button class="big alt" id="btnEdit">✎ Kemas kini pengguna / catatan</button>
+    <button class="big ghost" id="btnBack">Kembali</button>
+  </section>
+
+  <section id="editCard" class="card hidden">
+    <h3 style="margin-top:0">Kemas kini</h3>
+    <label>Nama pengguna</label>
+    <input id="eUser" list="userList" placeholder="Taip nama" autocomplete="off">
+    <datalist id="userList"></datalist>
+    <label>Lokasi peranti</label>
+    <input id="eLoc" autocomplete="off">
+    <label>Catatan (pilihan)</label>
+    <textarea id="eNote" placeholder="cth. Skrin retak, tiada pengecas"></textarea>
+    <button class="big" id="btnSaveEdit">Simpan kemas kini</button>
+    <button class="big ghost" id="btnCancelEdit">Batal</button>
+  </section>
+
+  <section id="done" class="card hidden">
+    <div class="check">✔</div>
+    <p id="doneMsg" style="text-align:center;font-weight:600"></p>
+    <button class="big" id="btnNext">Imbas peranti seterusnya</button>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const store = {
+  get: k => { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} }
+};
+let scanner = null, current = null, users = [];
+const ALL = ['settings','scanCard','pickCard','result','editCard','done'];
+function show(...ids) { ALL.forEach(i => $(i).classList.toggle('hidden', !ids.includes(i))); window.scrollTo({top:0}); }
+function toast(msg, type='') { const t=$('toast'); t.textContent=msg; t.className='show '+type; clearTimeout(toast.t); toast.t=setTimeout(()=>t.className='',2800); }
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function api(action, data = {}) {
+  const url = store.get('url'), passcode = store.get('pass');
+  if (!url || !passcode) { openSettings(); throw new Error('Sila isi Tetapan dahulu'); }
+  // No Content-Type header on purpose (avoids CORS preflight that Apps Script cannot answer).
+  const res = await fetch(url, { method:'POST', body: JSON.stringify({ action, passcode, ...data }) });
+  const out = await res.json();
+  if (!out.ok) throw new Error(out.error || 'Permintaan gagal');
+  return out;
+}
+
+function openSettings() { $('cfgUrl').value=store.get('url'); $('cfgPass').value=store.get('pass'); $('cfgName').value=store.get('name'); show('settings'); }
+$('btnSettings').onclick = openSettings;
+$('btnSave').onclick = async () => {
+  store.set('url',$('cfgUrl').value.trim()); store.set('pass',$('cfgPass').value); store.set('name',$('cfgName').value.trim());
+  try { await init(); show('scanCard'); toast('Disimpan & bersambung','good'); } catch(e){ toast(e.message,'err'); }
+};
+async function init() {
+  const r = await api('init'); users = r.users;
+  $('userList').innerHTML = users.map(u => `<option value="${esc(u)}">`).join('');
+  setProgress(r.stats);
+}
+function setProgress(s) {
+  const done = s.ok + s.upd;
+  $('prog').textContent = `Diaudit ${done} / ${s.total}  (disahkan ${s.ok}, dikemaskini ${s.upd})`;
+  $('barFill').style.width = s.total ? (done / s.total * 100) + '%' : '0';
+}
+async function refreshStats() { try { setProgress((await api('init')).stats); } catch {} }
+
+/* ---- scanner ---- */
+async function startScan() {
+  if (!window.isSecureContext) return toast('Kamera perlukan HTTPS','err');
+  $('reader').classList.remove('hidden'); $('btnScan').classList.add('hidden'); $('btnStop').classList.remove('hidden');
+  scanner = makeScanner('reader');
+  try {
+    await scanner.start({ facingMode:'environment' },
+      { fps:12, qrbox: w => ({ width: Math.min(320, w-20), height:140 }),
+        videoConstraints: { facingMode:'environment', width:{ideal:1920}, height:{ideal:1080} } },
+      async text => { await stopScan(); if (navigator.vibrate) navigator.vibrate(80); find(text); }, () => {});
+    try {
+      const torch = scanner.getRunningTrackCameraCapabilities().torchFeature();
+      if (torch.isSupported()) {
+        let on = false; $('btnTorch').classList.remove('hidden');
+        $('btnTorch').onclick = async () => { on = !on; try { await torch.apply(on); } catch { on = !on; } };
+      }
+    } catch {}
+  } catch (e) { await stopScan(); toast('Tidak dapat buka kamera: ' + (e.message||e) + '. Cuba butang gambar.','err'); }
+}
+function makeScanner(elId) {
+  const F = Html5QrcodeSupportedFormats;
+  return new Html5Qrcode(elId, {
+    formatsToSupport: [F.CODE_128, F.CODE_39, F.CODE_93, F.EAN_13, F.UPC_A, F.ITF, F.QR_CODE, F.DATA_MATRIX],
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+  });
+}
+// Fallback: take/choose a photo and decode it (works even if live camera is blocked)
+$('btnPhoto').onclick = () => $('photoIn').click();
+$('photoIn').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    toast('Membaca gambar…');
+    const h = makeScanner('reader-tmp');
+    const text = await h.scanFile(f, false);
+    try { h.clear(); } catch {}
+    if (navigator.vibrate) navigator.vibrate(80);
+    find(text);
+  } catch { toast('Barkod tidak dikesan. Dekatkan, pastikan terang & lurus, kemudian cuba lagi.','err'); }
+  e.target.value = '';
+};
+async function stopScan() {
+  try { if (scanner) { await scanner.stop(); scanner.clear(); } } catch {}
+  scanner = null; $('reader').classList.add('hidden'); $('btnStop').classList.add('hidden'); $('btnTorch').classList.add('hidden'); $('btnScan').classList.remove('hidden');
+}
+$('btnScan').onclick = startScan; $('btnStop').onclick = stopScan;
+
+/* ---- find / display ---- */
+async function find(q) {
+  q = (q||'').trim(); if (!q) return toast('Imbas atau taip kod','err');
+  try {
+    toast('Mencari…');
+    const r = await api('find', { q });
+    if (r.matches.length === 1) { current = r.matches[0]; render(current); }
+    else {
+      $('pickList').innerHTML = r.matches.map((m,i) => `<div class="pick" data-i="${i}"><b>${esc(m.id || '(tiada ID)')}</b>
+        <small>${esc(m.user)} · ${esc(m.type)} · ${esc(m.auditStatus)}</small></div>`).join('') +
+        (r.more ? '<small>Terlalu banyak padanan — sila perincikan carian.</small>' : '');
+      $('pickList').querySelectorAll('.pick').forEach(el => el.onclick = () => { current = r.matches[+el.dataset.i]; render(current); });
+      show('pickCard');
+    }
+  } catch (e) { toast(e.message,'err'); }
+}
+$('btnLookup').onclick = () => find($('manual').value);
+$('manual').addEventListener('keydown', e => { if (e.key==='Enter') find($('manual').value); });
+$('btnPickBack').onclick = () => show('scanCard');
+$('btnBack').onclick = () => show('scanCard');
+
+function render(a) {
+  $('rId').textContent = a.id || '(Tiada No. Aset / Tag ID)';
+  $('rUser').textContent = a.user || '—'; $('rType').textContent = a.type || '—';
+  $('rStatus').textContent = a.status + (a.idKind ? ' · ' + a.idKind : '');
+  $('rPlace').textContent = a.place || '—'; $('rLoc').textContent = a.loc || '—';
+  $('rAge').textContent = a.age || '—'; $('rCompany').textContent = a.company || '—'; $('rUse').textContent = a.use || '—';
+  $('rLast').textContent = a.auditDate ? `${a.auditDate}${a.auditBy ? ' (' + a.auditBy + ')' : ''}` : 'Belum';
+  $('rNote').textContent = a.note || '—';
+  const p = $('rAudit'); p.textContent = a.auditStatus; p.className = 'pill ' + a.auditStatus;
+  $('noId').classList.toggle('hidden', !!a.id);
+  show('result');
+}
+
+/* ---- actions ---- */
+function finish(msg) { $('doneMsg').textContent = msg; show('done'); refreshStats(); }
+$('btnVerify').onclick = async () => {
+  $('btnVerify').disabled = true;
+  try { await api('verify', { row: current.row, id: current.id, auditor: store.get('name') }); finish((current.id || current.user) + ' disahkan'); }
+  catch (e) { toast(e.message,'err'); }
+  $('btnVerify').disabled = false;
+};
+$('btnEdit').onclick = () => {
+  $('eUser').value = current.user || ''; $('eLoc').value = current.loc || ''; $('eNote').value = current.note || '';
+  show('editCard');
+};
+$('btnCancelEdit').onclick = () => show('result');
+$('btnSaveEdit').onclick = async () => {
+  const user = $('eUser').value.trim();
+  if (users.length && user && !users.some(u => u.toLowerCase() === user.toLowerCase()) &&
+      !confirm('"' + user + '" tiada dalam senarai pengguna. Simpan juga?')) return;
+  $('btnSaveEdit').disabled = true;
+  try {
+    await api('update', { row: current.row, id: current.id, user, loc: $('eLoc').value.trim(), note: $('eNote').value.trim(), auditor: store.get('name') });
+    finish((current.id || current.user) + ' dikemaskini');
+  } catch (e) { toast(e.message,'err'); }
+  $('btnSaveEdit').disabled = false;
+};
+$('btnNext').onclick = () => { $('manual').value=''; current=null; show('scanCard'); startScan(); };
+
+if (!store.get('url') || !store.get('pass')) openSettings(); else init().catch(e => toast(e.message,'err'));
+</script>
+</body>
+</html>
