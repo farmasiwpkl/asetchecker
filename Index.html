@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f141b">
+<title>Asset Audit</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<!-- Stronger decoder (ZXing C++ compiled to WebAssembly) for dense Code 128 labels. Optional: the page still works without it. -->
+<script src="https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.5/dist/iife/reader/index.js"></script>
+<style>
+  :root { --bg:#0f141b; --card:#18202b; --line:#2a3544; --text:#eaf0f7; --muted:#8fa0b3;
+          --brand:#3d7bff; --ok:#1fbf5b; --amber:#f0a020; --bad:#e5484d; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; background:var(--bg); color:var(--text); }
+  body { font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; padding-bottom:env(safe-area-inset-bottom); }
+  .hidden { display:none !important; }
+  header { padding:10px 14px 8px; background:#131a23; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  .top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .top b { font-size:17px; }
+  .badge { border:0; border-radius:99px; padding:6px 12px; font-size:13px; font-weight:700; color:#fff; background:var(--ok); }
+  .badge.warn { background:var(--amber); color:#1c1400; } .badge.bad { background:var(--bad); }
+  .icon { border:1px solid var(--line); background:transparent; color:var(--text); border-radius:10px; font-size:18px; padding:4px 10px; }
+  #prog { font-size:12px; color:var(--muted); margin-top:6px; }
+  .bar { height:4px; background:#26313f; border-radius:9px; margin-top:5px; overflow:hidden; }
+  .bar i { display:block; height:100%; width:0; background:var(--ok); transition:width .3s; }
+  main { max-width:560px; margin:0 auto; padding:12px; }
+  .camwrap { position:relative; background:#000; border-radius:14px; overflow:hidden; min-height:260px; border:1px solid var(--line); }
+  #reader { width:100%; }
+  .camMsg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:20px; color:#fff; background:#000c; }
+  .ctrls { display:flex; gap:8px; margin:10px 0; }
+  .chip { flex:1; padding:13px; font-size:15px; font-weight:600; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--text); }
+  .search { display:flex; gap:8px; }
+  .search input { flex:1; }
+  .search button { flex:0 0 84px; border:0; border-radius:12px; background:var(--brand); color:#fff; font-size:16px; font-weight:700; }
+  .hint { color:var(--muted); font-size:13px; text-align:center; margin:12px 0 0; }
+  .zoom { display:flex; align-items:center; gap:10px; margin:0 0 10px; }
+  .zoom input { flex:1; padding:0; border:0; background:transparent; height:32px; }
+  input, textarea { width:100%; padding:13px; font-size:16px; border:1px solid var(--line); border-radius:12px; background:#0c1117; color:var(--text); }
+  textarea { min-height:78px; resize:vertical; }
+  label { display:block; font-size:13px; color:var(--muted); margin:12px 0 5px; }
+  .overlay { position:fixed; inset:0; background:var(--bg); overflow:auto; display:none; z-index:20; padding:12px 12px calc(150px + env(safe-area-inset-bottom)); }
+  .overlay.active { display:block; }
+  .overlay > * { max-width:560px; margin-left:auto; margin-right:auto; }
+  .obar { display:flex; justify-content:space-between; align-items:center; padding:6px 0 12px; }
+  .link { background:none; border:0; color:var(--brand); font-size:16px; font-weight:600; padding:8px 0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; }
+  .tag { font-size:20px; font-weight:800; word-break:break-all; margin-bottom:8px; }
+  .pill { display:inline-block; padding:3px 11px; border-radius:99px; font-size:12px; font-weight:800; background:#46556a; color:#fff; letter-spacing:.4px; }
+  .pill.VERIFIED { background:var(--ok); } .pill.UPDATED { background:var(--amber); color:#1c1400; }
+  .kv { display:grid; grid-template-columns:100px 1fr; gap:7px 10px; font-size:15px; margin-top:14px; }
+  .kv b { color:var(--muted); font-weight:500; } .own { font-weight:800; font-size:17px; }
+  .warn { background:#3a2e12; border:1px solid #6b5420; border-radius:10px; padding:9px 11px; font-size:14px; margin-top:12px; }
+  .actions { position:fixed; left:0; right:0; bottom:0; padding:12px 12px calc(12px + env(safe-area-inset-bottom));
+             background:linear-gradient(transparent, var(--bg) 22%); max-width:none !important; }
+  .actions > .btn { display:block; width:100%; max-width:536px; margin:10px auto 0; }
+  .btn { padding:17px; font-size:18px; font-weight:800; border:0; border-radius:14px; color:#fff; background:var(--brand); }
+  .btn.ok { background:var(--ok); } .btn.amber { background:var(--amber); color:#1c1400; } .btn.ghost { background:#26313f; color:var(--text); }
+  .pick { padding:13px; border:1px solid var(--line); border-radius:12px; margin-top:10px; background:var(--card); }
+  .pick b { display:block; word-break:break-all; } .pick small { color:var(--muted); }
+  .row { display:flex; align-items:center; gap:10px; margin-top:12px; } .row input { width:auto; }
+  #toast { position:fixed; left:50%; top:70px; transform:translateX(-50%); background:#0c1117ee; border:1px solid var(--line); color:#fff;
+           padding:11px 18px; border-radius:12px; opacity:0; pointer-events:none; transition:opacity .2s; max-width:90%; text-align:center; z-index:50; }
+  #toast.show { opacity:1; } #toast.err { background:var(--bad); border-color:var(--bad); } #toast.good { background:var(--ok); border-color:var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><b>📦 Asset Audit</b>
+    <div><button id="sync" class="badge">✔ Synced</button> <button id="btnSettings" class="icon" aria-label="Settings">⚙</button></div></div>
+  <div id="prog"></div><div class="bar"><i id="barFill"></i></div>
+</header>
+
+<!-- Screen 1: Quick scan -->
+<main id="vScan">
+  <div class="camwrap"><div id="reader"></div><div id="camMsg" class="camMsg hidden"></div></div>
+  <div class="ctrls">
+    <button id="btnTorch" class="chip hidden">🔦 Torch</button>
+    <button id="btnPhoto" class="chip">🖼 Photo scan</button>
+  </div>
+  <div id="zoomWrap" class="zoom hidden"><span>🔍</span><input type="range" id="zoom" aria-label="Zoom"></div>
+  <div class="search">
+    <input id="manual" placeholder="Search asset no. / tag ID / name" autocomplete="off">
+    <button id="btnFind">Find</button>
+  </div>
+  <input type="file" id="photoIn" accept="image/*" capture="environment" class="hidden">
+  <div id="reader-tmp" style="display:none"></div>
+  <p class="hint">Hold the phone 15–25 cm away so the barcode fills most of the screen width. Keep it flat, in focus and free of glare. It scans automatically.</p>
+</main>
+
+<!-- Screen 2: Verification card -->
+<div id="vVerify" class="overlay">
+  <div class="obar"><button class="link" id="vBack">← Back to scan</button></div>
+  <div class="card">
+    <div class="tag" id="vId"></div><span id="vPill" class="pill"></span>
+    <div class="kv" id="vKv"></div>
+    <div id="vNoId" class="warn hidden">⚠ This device has no asset no. / tag ID in the list. Add a remark and fix the list later.</div>
+    <label>Remarks (optional)</label>
+    <textarea id="vNote" placeholder="e.g. Screen cracked, charger missing"></textarea>
+  </div>
+  <div class="actions">
+    <button class="btn ok" id="btnOk">✔ Info is correct</button>
+    <button class="btn amber" id="btnUpd">✎ Update owner / details</button>
+  </div>
+</div>
+
+<!-- Screen 3: Update & re-assignment -->
+<div id="vEdit" class="overlay">
+  <div class="obar"><b>Update &amp; re-assign</b><button class="link" id="eCancel">Cancel</button></div>
+  <div class="card">
+    <div class="tag" id="eId"></div>
+    <label>Owner</label>
+    <input id="eUser" list="userList" placeholder="Type a name" autocomplete="off">
+    <datalist id="userList"></datalist>
+    <label>Department / unit</label>
+    <input id="ePlace" autocomplete="off">
+    <label>Device location</label>
+    <input id="eLoc" autocomplete="off">
+    <label>Remarks (optional)</label>
+    <textarea id="eNote" placeholder="e.g. Moved to another unit"></textarea>
+  </div>
+  <div class="actions"><button class="btn amber" id="eSave">Save update</button></div>
+</div>
+
+<!-- New barcode: link it to a device (one-time) -->
+<div id="vLink" class="overlay">
+  <div class="obar"><b>New barcode</b><button class="link" id="lBack">Cancel</button></div>
+  <div class="card">
+    <label style="margin-top:0">Scanned value</label>
+    <div class="tag" id="lCode"></div>
+    <p class="hint" style="text-align:left">This barcode is not linked to a device yet. Search for the device (asset no. or user name) and tap it. This is only needed once per label.</p>
+    <input id="lSearch" placeholder="Search asset no. / name" autocomplete="off">
+    <div id="lList"></div>
+  </div>
+</div>
+
+<!-- Multiple matches -->
+<div id="vPick" class="overlay">
+  <div class="obar"><button class="link" id="pBack">← Back to scan</button></div>
+  <b>Select the device:</b>
+  <div id="pList"></div>
+</div>
+
+<!-- Settings -->
+<div id="vSettings" class="overlay">
+  <div class="obar"><b>Settings</b><button class="link" id="sClose">Close</button></div>
+  <div class="card">
+    <label>Apps Script Web App URL</label>
+    <input id="cfgUrl" placeholder="https://script.google.com/macros/s/.../exec" inputmode="url" autocomplete="off">
+    <label>Passcode</label>
+    <input id="cfgPass" type="password" autocomplete="off">
+    <label>Your name (auditor)</label>
+    <input id="cfgName" autocomplete="off">
+    <div class="row"><input type="checkbox" id="cfgSound"><span>Beep sounds</span></div>
+    <div class="row"><input type="checkbox" id="cfgVib"><span>Vibration (not supported on iPhone)</span></div>
+  </div>
+  <div class="actions">
+    <button class="btn" id="sSave">Save &amp; download list</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const LS = {
+  get: (k, d = '') => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} }
+};
+const jget = (k, d) => { try { return JSON.parse(LS.get(k, '')) ?? d; } catch { return d; } };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const enc = encodeURIComponent;
+const norm = s => String(s || '').toLowerCase().replace(/\s+/g, '');
+const SMAP = { 'Disahkan':'VERIFIED', 'Dikemaskini':'UPDATED', 'Belum Diaudit':'PENDING' };
+
+/* ---------- state ---------- */
+let rows = jget('rows', []), queue = jget('queue', []), failed = jget('failed', []);
+let scanner = null, busy = false, cur = null, flushing = false;
+const saveRows = () => LS.set('rows', JSON.stringify(rows));
+const saveQ = () => { LS.set('queue', JSON.stringify(queue)); LS.set('failed', JSON.stringify(failed)); updateBadge(); };
+
+/* ---------- feedback ---------- */
+let actx;
+function audio() { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch {} return actx; }
+document.addEventListener('pointerdown', audio, { once: true });
+function beep(kind) {
+  if (LS.get('sound', '1') !== '1') return;
+  const c = audio(); if (!c) return;
+  try {
+    const o = c.createOscillator(), g = c.createGain();
+    o.frequency.value = kind === 'err' ? 220 : kind === 'scan' ? 1000 : 760; g.gain.value = .15;
+    o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + (kind === 'err' ? .25 : .1));
+  } catch {}
+}
+const vib = p => { if (LS.get('vib', '1') === '1' && navigator.vibrate) navigator.vibrate(p); };
+function toast(msg, type = '') { const t = $('toast'); t.textContent = msg; t.className = 'show ' + type; clearTimeout(toast.t); toast.t = setTimeout(() => t.className = '', 2200); }
+
+/* ---------- API ---------- */
+class ApiErr extends Error { constructor(m, retry) { super(m); this.retry = retry; } }
+async function api(action, data = {}) {
+  const url = LS.get('url'), passcode = LS.get('pass', '1234');
+  if (!url || !passcode) throw new ApiErr('Open Settings and enter the API URL and passcode', true);
+  let res; try { res = await fetch(url, { method: 'POST', body: JSON.stringify({ ...data, action, passcode }) }); }
+  catch { throw new ApiErr('Offline', true); }
+  let out; try { out = await res.json(); } catch { throw new ApiErr('Bad server response (deployment access must be "Anyone")', true); }
+  if (!out.ok) throw new ApiErr(out.error || 'Request failed', /laluan|passcode/i.test(out.error || ''));
+  return out;
+}
+
+/* ---------- local data ---------- */
+function localFind(q) {
+  const n = norm(q); if (!n) return [];
+  let m = rows.filter(r => (r.id && norm(r.id) === n) || (r.code && norm(r.code) === n));
+  if (m.length) return m;
+  return n.length >= 3 ? rows.filter(r => norm(r.id).includes(n) || norm(r.user).includes(n)) : [];
+}
+const keyOf = a => (a.id && rows.filter(r => norm(r.id) === norm(a.id)).length === 1) ? a.id : 'row:' + a.row;
+const byKey = k => k.startsWith('row:') ? rows.find(r => r.row === +k.slice(4)) : rows.find(r => norm(r.id) === norm(k));
+function renderProgress() {
+  let ok = 0, upd = 0; rows.forEach(r => { if (r.auditStatus === 'Disahkan') ok++; else if (r.auditStatus === 'Dikemaskini') upd++; });
+  const done = ok + upd;
+  $('prog').textContent = rows.length ? `Audited ${done} / ${rows.length}  ·  verified ${ok}, updated ${upd}` : 'No data yet. Open Settings.';
+  $('barFill').style.width = rows.length ? (done / rows.length * 100) + '%' : '0';
+}
+async function pull() {
+  if (queue.length || !LS.get('url')) return;
+  try { const r = await api('init'); rows = r.rows; saveRows(); renderProgress(); } catch {}
+}
+
+/* ---------- offline queue + sync ---------- */
+function applyLocal(it) {
+  const r = rows.find(x => x.row === it.row); if (!r) return;
+  if (it.action === 'link') { r.code = it.code; saveRows(); return; }
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  r.auditDate = `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  r.auditBy = it.auditor || '';
+  if (it.action === 'verify') { r.auditStatus = 'Disahkan'; if (it.note !== undefined) r.note = it.note; }
+  else {
+    r.auditStatus = 'Dikemaskini';
+    ['user', 'loc', 'place', 'note'].forEach(f => { if (it[f] !== undefined) r[f] = it[f]; });
+  }
+  saveRows();
+}
+async function flush() {
+  if (flushing || !queue.length) return;
+  flushing = true;
+  try {
+    while (queue.length) {
+      const it = queue[0];
+      try {
+        const r = await api(it.action, it);
+        const i = rows.findIndex(x => x.row === it.row); if (i >= 0) rows[i] = r.asset;
+        queue.shift(); saveQ(); saveRows();
+      } catch (e) {
+        if (e.retry) break;
+        failed.push({ ...it, error: e.message }); queue.shift(); saveQ(); toast('Sync failed: ' + e.message, 'err');
+      }
+    }
+  } finally { flushing = false; }
+  renderProgress(); updateBadge(); if (!queue.length) pull();
+}
+function updateBadge() {
+  const b = $('sync');
+  if (failed.length) { b.textContent = '⚠ ' + failed.length + ' failed'; b.className = 'badge bad'; }
+  else if (queue.length) { b.textContent = '⏳ ' + queue.length + ' pending'; b.className = 'badge warn'; }
+  else if (!navigator.onLine) { b.textContent = 'Offline'; b.className = 'badge warn'; }
+  else { b.textContent = '✔ Synced'; b.className = 'badge'; }
+}
+$('sync').onclick = () => {
+  if (failed.length) {
+    alert('These could not be saved. Please scan them again:\n\n' + failed.map(f => `${f.id || 'row ' + f.row}: ${f.error}`).join('\n'));
+    failed = []; saveQ();
+  } else { toast('Syncing…'); flush().then(pull); }
+};
+window.addEventListener('online', () => { updateBadge(); flush(); });
+window.addEventListener('offline', updateBadge);
+setInterval(() => { flush(); }, 30000);
+setInterval(() => { pull(); }, 300000);
+
+function commit(action, payload) {
+  const it = { cid: Date.now() + '' + Math.random(), action, row: cur.row, id: cur.id, auditor: LS.get('name'), ts: Date.now(), ...payload };
+  queue.push(it); saveQ(); applyLocal(it);
+  beep('ok'); vib(60);
+  toast((cur.id || cur.user || 'Device') + (action === 'verify' ? ' verified ✔' : ' updated ✔'), 'good');
+  renderProgress(); location.hash = '#/scan'; flush();
+}
+
+/* ---------- routing ---------- */
+function route() {
+  const parts = (location.hash.replace(/^#\/?/, '') || 'scan').split('/');
+  const name = parts[0], key = decodeURIComponent(parts.slice(1).join('/'));
+  ['vVerify', 'vEdit', 'vPick', 'vSettings', 'vLink'].forEach(i => $(i).classList.remove('active'));
+  if (name === 'verify' || name === 'edit') {
+    cur = byKey(key); if (!cur) { location.hash = '#/scan'; return; }
+    name === 'verify' ? showVerify() : showEdit();
+  } else if (name === 'pick') showPick(key);
+  else if (name === 'link') showLink(key);
+  else if (name === 'settings') showSettings();
+  else enterScan();
+}
+window.addEventListener('hashchange', route);
+
+/* ---------- screen 1: scan ---------- */
+function makeScanner(elId) {
+  const F = Html5QrcodeSupportedFormats;
+  return new Html5Qrcode(elId, {
+    formatsToSupport: [F.CODE_128, F.CODE_39, F.CODE_93, F.EAN_13, F.UPC_A, F.ITF, F.QR_CODE, F.DATA_MATRIX],
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+  });
+}
+function camMsg(t) { const m = $('camMsg'); m.textContent = t || ''; m.classList.toggle('hidden', !t); }
+const WASM_FORMATS = ['Code128', 'Code39', 'Code93', 'QRCode', 'DataMatrix', 'EAN13', 'ITF'];
+async function wasmRead(input) {
+  if (typeof ZXingWASM === 'undefined') return '';
+  try {
+    const res = await ZXingWASM.readBarcodes(input, { formats: WASM_FORMATS, tryHarder: true, maxNumberOfSymbols: 1 });
+    const hit = res.find(r => r.text); return hit ? hit.text : '';
+  } catch { return ''; }
+}
+// Second decoder running on the same camera picture. Dense Code 128 labels are far more reliable with it.
+let assistTimer = null, assistBusy = false;
+const assistCanvas = document.createElement('canvas');
+function startAssist() {
+  stopAssist();
+  if (typeof ZXingWASM === 'undefined') return;
+  assistTimer = setInterval(async () => {
+    if (assistBusy || busy) return;
+    const v = document.querySelector('#reader video');
+    if (!v || v.paused || v.readyState < 2 || !v.videoWidth) return;
+    assistBusy = true;
+    try {
+      const s = Math.min(1, 1600 / v.videoWidth);
+      assistCanvas.width = Math.round(v.videoWidth * s); assistCanvas.height = Math.round(v.videoHeight * s);
+      const ctx = assistCanvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(v, 0, 0, assistCanvas.width, assistCanvas.height);
+      const text = await wasmRead(ctx.getImageData(0, 0, assistCanvas.width, assistCanvas.height));
+      if (text && !busy) onDecoded(text);
+    } catch {}
+    assistBusy = false;
+  }, 300);
+}
+function stopAssist() { clearInterval(assistTimer); assistTimer = null; }
+
+async function startScan() {
+  if (typeof Html5Qrcode === 'undefined') return camMsg('Scanner library not loaded. Connect to the internet once, then reload.');
+  if (!window.isSecureContext) return camMsg('Camera needs an https:// address.');
+  scanner = makeScanner('reader');
+  try {
+    // No qrbox: the whole camera picture is scanned, so a long barcode is never cut off.
+    await scanner.start({ facingMode: 'environment' },
+      { fps: 15,
+        videoConstraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 },
+                            advanced: [{ focusMode: 'continuous' }] } },
+      onDecoded, () => {});
+    camMsg('');
+    startAssist();
+    const caps = scanner.getRunningTrackCameraCapabilities();
+    try {
+      const torch = caps.torchFeature();
+      if (torch.isSupported()) {
+        let on = false; $('btnTorch').classList.remove('hidden');
+        $('btnTorch').onclick = async () => { on = !on; try { await torch.apply(on); } catch { on = !on; } };
+      }
+    } catch {}
+    try {
+      const z = caps.zoomFeature();
+      if (z.isSupported()) {
+        const s = $('zoom'); s.min = z.min(); s.max = z.max(); s.step = z.step() || 0.1; s.value = z.value() || z.min();
+        s.oninput = () => { try { z.apply(+s.value); } catch {} };
+        $('zoomWrap').classList.remove('hidden');
+      }
+    } catch {}
+  } catch (e) { scanner = null; camMsg('Cannot open the camera (' + (e.message || e) + '). Allow camera access, or use Photo scan / Search below.'); }
+}
+function enterScan() {
+  busy = false;
+  if (!scanner) { startScan(); return; }
+  try { if (scanner.getState() === 3) scanner.resume(); } catch {}
+}
+function onDecoded(text) {
+  if (busy) return; busy = true;
+  beep('scan'); vib(40);
+  try { scanner.pause(true); } catch {}
+  if (!search(text, true)) setTimeout(() => { busy = false; try { if (scanner.getState() === 3) scanner.resume(); } catch {} }, 1200);
+}
+// scanned = true when the text came from the camera/photo; an unknown barcode then opens the "link to device" screen.
+function search(q, scanned) {
+  q = (q || '').trim(); if (!q) return false;
+  const m = localFind(q);
+  if (!m.length) {
+    beep('err'); vib([80, 60, 80]);
+    if (scanned) { location.hash = '#/link/' + enc(q); return true; }
+    toast('"' + q + '" not found', 'err'); if (navigator.onLine) pull(); return false;
+  }
+  location.hash = m.length === 1 ? '#/verify/' + enc(keyOf(m[0])) : '#/pick/' + enc(q);
+  return true;
+}
+$('btnFind').onclick = () => { if (search($('manual').value)) $('manual').value = ''; };
+$('manual').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnFind').click(); });
+$('btnPhoto').onclick = () => $('photoIn').click();
+$('photoIn').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    toast('Reading photo…');
+    let text = await wasmRead(f);
+    if (!text) {
+      const h = makeScanner('reader-tmp');
+      try { text = await h.scanFile(f, false); } finally { try { h.clear(); } catch {} }
+    }
+    beep('scan'); vib(40); search(text, true);
+  } catch { beep('err'); toast('No barcode found. Get closer, keep it straight and well lit.', 'err'); }
+  e.target.value = '';
+};
+
+/* ---------- screen 2: verification card ---------- */
+function showVerify() {
+  const a = cur;
+  $('vId').textContent = a.id || '(No asset no. / tag ID)';
+  const s = SMAP[a.auditStatus] || a.auditStatus; $('vPill').textContent = s; $('vPill').className = 'pill ' + s;
+  const kv = [['Owner', a.user], ['Type', a.type], ['Device status', a.status + (a.idKind ? ' · ' + a.idKind : '')],
+    ['Department', a.place], ['Location', a.loc], ['Age', a.age], ['Vendor', a.company], ['Usage', a.use],
+    ['Last audit', a.auditDate ? a.auditDate + (a.auditBy ? ' (' + a.auditBy + ')' : '') : 'Never']];
+  if (a.code) kv.push(['Barcode', a.code]);
+  $('vKv').innerHTML = kv.map(([k, v]) => `<b>${k}</b><span${k === 'Owner' ? ' class="own"' : ''}>${esc(v) || '—'}</span>`).join('');
+  $('vNote').value = a.note || '';
+  $('vNoId').classList.toggle('hidden', !!a.id);
+  $('vVerify').classList.add('active'); $('vVerify').scrollTop = 0;
+}
+$('vBack').onclick = () => { location.hash = '#/scan'; };
+$('btnOk').onclick = () => {
+  const note = $('vNote').value.trim();
+  commit('verify', { note: note !== (cur.note || '') ? note : undefined });
+};
+$('btnUpd').onclick = () => { location.hash = '#/edit/' + enc(keyOf(cur)); };
+
+/* ---------- screen 3: update form ---------- */
+function showEdit() {
+  const a = cur;
+  $('eId').textContent = a.id || '(No asset no. / tag ID)';
+  $('eUser').value = a.user || ''; $('ePlace').value = a.place || ''; $('eLoc').value = a.loc || ''; $('eNote').value = a.note || '';
+  const names = Array.from(new Set(rows.map(r => String(r.user).trim()).filter(Boolean))).sort();
+  $('userList').innerHTML = names.map(n => `<option value="${esc(n)}">`).join('');
+  $('vEdit').classList.add('active'); $('vEdit').scrollTop = 0;
+}
+$('eCancel').onclick = () => { location.hash = '#/verify/' + enc(keyOf(cur)); };
+$('eSave').onclick = () => {
+  const user = $('eUser').value.trim();
+  const known = rows.some(r => norm(r.user) === norm(user));
+  if (user && !known && !confirm('"' + user + '" is not in the current list. Save anyway?')) return;
+  commit('update', { user, place: $('ePlace').value.trim(), loc: $('eLoc').value.trim(), note: $('eNote').value.trim() });
+};
+
+/* ---------- link a new barcode to a device ---------- */
+let linkCode = '';
+function showLink(code) {
+  linkCode = code; $('lCode').textContent = code; $('lSearch').value = ''; renderLinkList();
+  $('vLink').classList.add('active'); $('vLink').scrollTop = 0;
+}
+function renderLinkList() {
+  const n = norm($('lSearch').value);
+  const m = n.length >= 2 ? rows.filter(r => norm(r.id).includes(n) || norm(r.user).includes(n)).slice(0, 30) : [];
+  $('lList').innerHTML = m.map((r, i) => `<div class="pick" data-i="${i}"><b>${esc(r.id || '(no ID)')}</b>
+    <small>${esc(r.user)} · ${esc(r.type)}${r.code ? ' · already has a barcode linked' : ''}</small></div>`).join('')
+    || `<p class="hint">${n.length >= 2 ? 'No matches.' : 'Type at least 2 characters.'}</p>`;
+  $('lList').querySelectorAll('.pick').forEach(el => el.onclick = () => doLink(m[+el.dataset.i]));
+}
+$('lSearch').addEventListener('input', renderLinkList);
+function doLink(r) {
+  if (!confirm('Link this barcode to ' + (r.id || r.user) + '?\n\n' + linkCode +
+      (r.code ? '\n\nThis device already has another barcode linked. It will be replaced.' : ''))) return;
+  const it = { cid: Date.now() + '' + Math.random(), action: 'link', row: r.row, id: r.id, code: linkCode, auditor: LS.get('name'), ts: Date.now() };
+  queue.push(it); saveQ(); applyLocal(it);
+  beep('ok'); vib(60); toast('Barcode linked ✔', 'good');
+  location.hash = '#/verify/' + enc(keyOf(r)); flush();
+}
+$('lBack').onclick = () => { location.hash = '#/scan'; };
+
+/* ---------- multiple matches ---------- */
+function showPick(q) {
+  const m = localFind(q);
+  $('pList').innerHTML = m.slice(0, 30).map((r, i) => `<div class="pick" data-i="${i}"><b>${esc(r.id || '(no ID)')}</b>
+    <small>${esc(r.user)} · ${esc(r.type)} · ${esc(SMAP[r.auditStatus] || r.auditStatus)}</small></div>`).join('') || '<p>No matches.</p>';
+  $('pList').querySelectorAll('.pick').forEach(el => el.onclick = () => { location.hash = '#/verify/' + enc(keyOf(m[+el.dataset.i])); });
+  $('vPick').classList.add('active');
+}
+$('pBack').onclick = () => { location.hash = '#/scan'; };
+
+/* ---------- settings ---------- */
+function showSettings() {
+  $('cfgUrl').value = LS.get('url'); $('cfgPass').value = LS.get('pass', '1234'); $('cfgName').value = LS.get('name');
+  $('cfgSound').checked = LS.get('sound', '1') === '1'; $('cfgVib').checked = LS.get('vib', '1') === '1';
+  $('vSettings').classList.add('active');
+}
+$('btnSettings').onclick = () => { location.hash = '#/settings'; };
+$('sClose').onclick = () => { location.hash = '#/scan'; };
+$('sSave').onclick = async () => {
+  LS.set('url', $('cfgUrl').value.trim()); LS.set('pass', $('cfgPass').value || '1234'); LS.set('name', $('cfgName').value.trim());
+  LS.set('sound', $('cfgSound').checked ? '1' : '0'); LS.set('vib', $('cfgVib').checked ? '1' : '0');
+  try {
+    toast('Connecting…');
+    const r = await api('init'); rows = r.rows; saveRows(); renderProgress();
+    toast('Connected. ' + rows.length + ' devices loaded.', 'good'); location.hash = '#/scan'; flush();
+  } catch (e) { toast(e.message, 'err'); }
+};
+
+/* ---------- start ---------- */
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+renderProgress(); updateBadge();
+if (!LS.get('url')) location.hash = '#/settings';
+route(); flush(); pull();
+</script>
+</body>
+</html>
