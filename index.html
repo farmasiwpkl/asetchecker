@@ -30,6 +30,7 @@
   .camMsg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:20px; color:#fff; background:#000c; }
   .ctrls { display:flex; gap:8px; margin:10px 0; }
   .chip { flex:1; padding:13px; font-size:15px; font-weight:600; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--text); }
+  .chip.on { background:var(--amber); border-color:var(--amber); color:#1c1400; }
   .search { display:flex; gap:8px; }
   .search input { flex:1; }
   .search button { flex:0 0 84px; border:0; border-radius:12px; background:var(--brand); color:#fff; font-size:16px; font-weight:700; }
@@ -56,6 +57,24 @@
   .actions > .btn { display:block; width:100%; max-width:536px; margin:10px auto 0; }
   .btn { padding:17px; font-size:18px; font-weight:800; border:0; border-radius:14px; color:#fff; background:var(--brand); }
   .btn.ok { background:var(--ok); } .btn.amber { background:var(--amber); color:#1c1400; } .btn.ghost { background:#26313f; color:var(--text); }
+  select { width:100%; padding:12px; font-size:16px; border:1px solid var(--line); border-radius:12px; background:#0c1117; color:var(--text); }
+  #prog { cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
+  .wide { display:block; width:100%; margin:12px 0 0; }
+  .todoHead { position:sticky; top:-12px; z-index:3; background:var(--bg); padding:4px 0 10px; border-bottom:1px solid var(--line); }
+  .seg { display:flex; gap:6px; margin:6px 0 10px; }
+  .seg button { flex:1; padding:11px 4px; font-size:14px; font-weight:700; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--muted); }
+  .seg button.on { background:var(--brand); border-color:var(--brand); color:#fff; }
+  .fgrid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px; }
+  .fgrid .full { grid-column:1 / -1; }
+  .fgrid label { margin:0 0 3px; }
+  .tcount { font-size:14px; color:var(--muted); margin:10px 0 2px; display:flex; justify-content:space-between; align-items:center; }
+  .tcount button { background:none; border:0; color:var(--brand); font-weight:700; font-size:14px; padding:4px 0; }
+  .titem { display:flex; gap:10px; align-items:center; }
+  .titem > div { flex:1; min-width:0; }
+  .titem small { display:block; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dot { width:12px; height:12px; border-radius:50%; background:#6b7a8d; flex:0 0 12px; }
+  .dot.done { background:var(--ok); } .dot.upd { background:var(--amber); }
+  .noidtag { color:var(--amber); font-weight:700; }
   .pick { padding:13px; border:1px solid var(--line); border-radius:12px; margin-top:10px; background:var(--card); }
   .pick b { display:block; word-break:break-all; } .pick small { color:var(--muted); }
   .row { display:flex; align-items:center; gap:10px; margin-top:12px; } .row input { width:auto; }
@@ -74,8 +93,9 @@
 <!-- Screen 1: Quick scan -->
 <main id="vScan">
   <div class="camwrap"><div id="reader"></div><div id="camMsg" class="camMsg hidden"></div></div>
+  <button id="btnTodo" class="chip wide">📋 Not checked yet <span id="todoN"></span></button>
   <div class="ctrls">
-    <button id="btnTorch" class="chip hidden">🔦 Torch</button>
+    <button id="btnTorch" class="chip">🔦 Torch</button>
     <button id="btnPhoto" class="chip">🖼 Photo scan</button>
   </div>
   <div id="zoomWrap" class="zoom hidden"><span>🔍</span><input type="range" id="zoom" aria-label="Zoom"></div>
@@ -120,6 +140,26 @@
     <textarea id="eNote" placeholder="e.g. Moved to another unit"></textarea>
   </div>
   <div class="actions"><button class="btn amber" id="eSave">Save update</button></div>
+</div>
+
+<!-- Checklist: which assets are not checked yet -->
+<div id="vTodo" class="overlay">
+  <div class="obar"><button class="link" id="tBack">← Back to scan</button><b>Checklist</b></div>
+  <div class="todoHead">
+    <div class="seg" id="tSeg">
+      <button data-st="pending">Not checked</button>
+      <button data-st="done">Checked</button>
+      <button data-st="all">All</button>
+    </div>
+    <div class="fgrid">
+      <div class="full"><label>Department / unit</label><select id="fPlace"></select></div>
+      <div><label>Device type</label><select id="fType"></select></div>
+      <div><label>Ownership</label><select id="fOwn"></select></div>
+      <div class="full"><input id="fQ" placeholder="Search name or asset no." autocomplete="off"></div>
+    </div>
+    <div class="tcount"><span id="tCount"></span><button id="tReset">Clear filters</button></div>
+  </div>
+  <div id="tList"></div>
 </div>
 
 <!-- New barcode: link it to a device (one-time) -->
@@ -193,7 +233,7 @@ function beep(kind) {
   } catch {}
 }
 const vib = p => { if (LS.get('vib', '1') === '1' && navigator.vibrate) navigator.vibrate(p); };
-function toast(msg, type = '') { const t = $('toast'); t.textContent = msg; t.className = 'show ' + type; clearTimeout(toast.t); toast.t = setTimeout(() => t.className = '', 2200); }
+function toast(msg, type = '') { const t = $('toast'); t.textContent = msg; t.className = 'show ' + type; clearTimeout(toast.t); toast.t = setTimeout(() => t.className = '', Math.max(2200, msg.length * 50)); }
 
 /* ---------- API ---------- */
 class ApiErr extends Error { constructor(m, retry) { super(m); this.retry = retry; } }
@@ -220,6 +260,7 @@ function renderProgress() {
   let ok = 0, upd = 0; rows.forEach(r => { if (r.auditStatus === 'Disahkan') ok++; else if (r.auditStatus === 'Dikemaskini') upd++; });
   const done = ok + upd;
   $('prog').textContent = rows.length ? `Audited ${done} / ${rows.length}  ·  verified ${ok}, updated ${upd}` : 'No data yet. Open Settings.';
+  $('todoN').textContent = rows.length ? `(${rows.length - done} left)` : '';
   $('barFill').style.width = rows.length ? (done / rows.length * 100) + '%' : '0';
 }
 async function pull() {
@@ -282,19 +323,22 @@ function commit(action, payload) {
   queue.push(it); saveQ(); applyLocal(it);
   beep('ok'); vib(60);
   toast((cur.id || cur.user || 'Device') + (action === 'verify' ? ' verified ✔' : ' updated ✔'), 'good');
-  renderProgress(); location.hash = '#/scan'; flush();
+  renderProgress(); const back = returnTo || '#/scan'; returnTo = ''; location.hash = back; flush();
 }
 
 /* ---------- routing ---------- */
 function route() {
   const parts = (location.hash.replace(/^#\/?/, '') || 'scan').split('/');
   const name = parts[0], key = decodeURIComponent(parts.slice(1).join('/'));
-  ['vVerify', 'vEdit', 'vPick', 'vSettings', 'vLink'].forEach(i => $(i).classList.remove('active'));
+  ['vVerify', 'vEdit', 'vPick', 'vSettings', 'vLink', 'vTodo'].forEach(i => $(i).classList.remove('active'));
+  // Ignore the camera while another screen is open, so a stray label can't pull you away from a list or form.
+  if (['verify', 'edit', 'pick', 'link', 'settings', 'todo'].includes(name)) busy = true;
   if (name === 'verify' || name === 'edit') {
     cur = byKey(key); if (!cur) { location.hash = '#/scan'; return; }
     name === 'verify' ? showVerify() : showEdit();
   } else if (name === 'pick') showPick(key);
   else if (name === 'link') showLink(key);
+  else if (name === 'todo') showTodo();
   else if (name === 'settings') showSettings();
   else enterScan();
 }
@@ -341,6 +385,20 @@ function startAssist() {
 }
 function stopAssist() { clearInterval(assistTimer); assistTimer = null; }
 
+/* ---- torch (always shown; works on Android Chrome. iPhone Safari does not let web pages use the torch) ---- */
+let torchOn = false;
+function showTorch(on) { torchOn = on; $('btnTorch').classList.toggle('on', on); $('btnTorch').textContent = on ? '🔦 Torch ON' : '🔦 Torch'; }
+function videoTrack() {
+  const v = document.querySelector('#reader video'), s = v && v.srcObject;
+  return s && s.getVideoTracks ? s.getVideoTracks()[0] : null;
+}
+$('btnTorch').onclick = async () => {
+  const t = videoTrack();
+  if (!t) return toast('Camera is not running yet', 'err');
+  try { await t.applyConstraints({ advanced: [{ torch: !torchOn }] }); showTorch(!torchOn); }
+  catch { toast("This phone/browser can't switch the torch from a web page (iPhone Safari can't). Use the phone's own flashlight instead.", 'err'); }
+};
+
 async function startScan() {
   if (typeof Html5Qrcode === 'undefined') return camMsg('Scanner library not loaded. Connect to the internet once, then reload.');
   if (!window.isSecureContext) return camMsg('Camera needs an https:// address.');
@@ -354,16 +412,9 @@ async function startScan() {
       onDecoded, () => {});
     camMsg('');
     startAssist();
-    const caps = scanner.getRunningTrackCameraCapabilities();
+    showTorch(false);                       // the torch button is always visible; the camera starts with it off
     try {
-      const torch = caps.torchFeature();
-      if (torch.isSupported()) {
-        let on = false; $('btnTorch').classList.remove('hidden');
-        $('btnTorch').onclick = async () => { on = !on; try { await torch.apply(on); } catch { on = !on; } };
-      }
-    } catch {}
-    try {
-      const z = caps.zoomFeature();
+      const z = scanner.getRunningTrackCameraCapabilities().zoomFeature();
       if (z.isSupported()) {
         const s = $('zoom'); s.min = z.min(); s.max = z.max(); s.step = z.step() || 0.1; s.value = z.value() || z.min();
         s.oninput = () => { try { z.apply(+s.value); } catch {} };
@@ -373,7 +424,7 @@ async function startScan() {
   } catch (e) { scanner = null; camMsg('Cannot open the camera (' + (e.message || e) + '). Allow camera access, or use Photo scan / Search below.'); }
 }
 function enterScan() {
-  busy = false;
+  busy = false; returnTo = '';
   if (!scanner) { startScan(); return; }
   try { if (scanner.getState() === 3) scanner.resume(); } catch {}
 }
@@ -426,7 +477,7 @@ function showVerify() {
   $('vNoId').classList.toggle('hidden', !!a.id);
   $('vVerify').classList.add('active'); $('vVerify').scrollTop = 0;
 }
-$('vBack').onclick = () => { location.hash = '#/scan'; };
+$('vBack').onclick = () => { const back = returnTo || '#/scan'; returnTo = ''; location.hash = back; };
 $('btnOk').onclick = () => {
   const note = $('vNote').value.trim();
   commit('verify', { note: note !== (cur.note || '') ? note : undefined });
@@ -449,6 +500,61 @@ $('eSave').onclick = () => {
   if (user && !known && !confirm('"' + user + '" is not in the current list. Save anyway?')) return;
   commit('update', { user, place: $('ePlace').value.trim(), loc: $('eLoc').value.trim(), note: $('eNote').value.trim() });
 };
+
+/* ---------- checklist: what is not checked yet ---------- */
+let returnTo = '';                       // where "Info is correct" / Back should go (the checklist, when opened from it)
+const TODO_DEFAULT = { st: 'pending', place: '', type: '', own: '', q: '' };
+let tf = { ...TODO_DEFAULT, ...jget('todoFilter', {}) };
+const isDone = r => r.auditStatus === 'Disahkan' || r.auditStatus === 'Dikemaskini';
+const saveTf = () => LS.set('todoFilter', JSON.stringify(tf));
+const uniq = f => Array.from(new Set(rows.map(f).map(v => String(v ?? '').trim()).filter(v => v && v !== '-'))).sort((a, b) => a.localeCompare(b));
+
+function fillSelect(el, all, opts, cur, counts) {
+  el.innerHTML = `<option value="">${all}</option>` + opts.map(o =>
+    `<option value="${esc(o)}"${o === cur ? ' selected' : ''}>${esc(o)}${counts ? ' (' + (counts[o] || 0) + ' left)' : ''}</option>`).join('');
+}
+function showTodo() {
+  const left = {}; rows.forEach(r => { if (!isDone(r)) left[r.place] = (left[r.place] || 0) + 1; });
+  fillSelect($('fPlace'), 'All departments', uniq(r => r.place), tf.place, left);
+  fillSelect($('fType'), 'All types', uniq(r => r.type), tf.type);
+  fillSelect($('fOwn'), 'All', uniq(r => r.status), tf.own);
+  $('fQ').value = tf.q;
+  $('tSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.st === tf.st));
+  renderTodo();
+  $('vTodo').classList.add('active');
+}
+function todoRows() {
+  const n = norm(tf.q);
+  return rows.filter(r =>
+    (tf.st === 'all' || (tf.st === 'done') === isDone(r)) &&
+    (!tf.place || String(r.place).trim() === tf.place) &&
+    (!tf.type || String(r.type).trim() === tf.type) &&
+    (!tf.own || String(r.status).trim() === tf.own) &&
+    (!n || norm(r.user).includes(n) || norm(r.id).includes(n) || norm(r.code).includes(n)));
+}
+function renderTodo() {
+  const m = todoRows(), shown = m.slice(0, 300);
+  const label = { pending: 'not checked', done: 'checked', all: 'devices' }[tf.st];
+  $('tCount').textContent = `${m.length} ${label}` + (m.length > shown.length ? ` · showing first ${shown.length}` : '');
+  $('tList').innerHTML = shown.map((r, i) => `<div class="pick titem" data-i="${i}">
+      <span class="dot ${r.auditStatus === 'Disahkan' ? 'done' : r.auditStatus === 'Dikemaskini' ? 'upd' : ''}"></span>
+      <div><b>${r.id ? esc(r.id) : '<span class="noidtag">⚠ No asset no. / tag ID</span>'}</b>
+      <small>${esc(r.user)}</small><small>${esc(r.type)} · ${esc(r.place)}</small></div></div>`).join('')
+    || `<p class="hint">${tf.st === 'pending' && !tf.place && !tf.type && !tf.own && !tf.q ? '🎉 Everything has been checked.' : 'Nothing matches these filters.'}</p>`;
+  $('tList').querySelectorAll('.pick').forEach(el => el.onclick = () => {
+    returnTo = '#/todo'; location.hash = '#/verify/' + enc(keyOf(shown[+el.dataset.i]));
+  });
+}
+$('btnTodo').onclick = () => { location.hash = '#/todo'; };
+$('prog').onclick = () => { location.hash = '#/todo'; };
+$('tBack').onclick = () => { location.hash = '#/scan'; };
+$('tSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  tf.st = b.dataset.st; saveTf(); showTodo();
+});
+[['fPlace', 'place'], ['fType', 'type'], ['fOwn', 'own']].forEach(([id, k]) => $(id).onchange = () => { tf[k] = $(id).value; saveTf(); renderTodo(); });
+$('fQ').addEventListener('input', () => { tf.q = $('fQ').value; saveTf(); renderTodo(); });
+$('tReset').onclick = () => { tf = { ...TODO_DEFAULT, st: tf.st }; saveTf(); showTodo(); };
 
 /* ---------- link a new barcode to a device ---------- */
 let linkCode = '';
